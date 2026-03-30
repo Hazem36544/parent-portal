@@ -90,7 +90,7 @@ const ParentDashboard = () => {
 
             if (alimonyRes.status === 'fulfilled' && alimonyRes.value?.data) {
                 const alimony = alimonyRes.value.data;
-                newStats.totalAlimonyDue = alimony?.amount || 0; 
+                newStats.totalAlimonyDue = (alimony?.amount || 0) / 100;
                 newStats.alimonyStatus = newStats.totalAlimonyDue > 0 ? 'معلق' : 'مسدد';
             }
 

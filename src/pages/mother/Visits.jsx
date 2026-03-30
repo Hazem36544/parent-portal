@@ -61,8 +61,21 @@ export default function MotherVisits() {
           setFamilyData(family);
           
           try {
-            const visitsRes = await visitationAPI.list({ FamilyId: family.familyId, PageSize: 50 });
-            fetchedVisits = visitsRes.data?.items || (Array.isArray(visitsRes.data) ? visitsRes.data : []);
+            const visitsRes = await visitationAPI.list({ FamilyId: family.familyId, PageSize: 100 });
+            let rawVisits = visitsRes.data?.items || (Array.isArray(visitsRes.data) ? visitsRes.data : []);
+
+            let cleanVisits = [];
+            let seenVisitDates = new Set();
+
+            rawVisits.forEach(v => {
+                const dateOnly = v.startAt.split('T')[0]; 
+                if (!seenVisitDates.has(dateOnly)) {
+                    seenVisitDates.add(dateOnly);
+                    cleanVisits.push(v);
+                }
+            });
+
+            fetchedVisits = cleanVisits; 
           } catch(e) { console.warn("لم يتم العثور على زيارات بالسيرفر"); }
 
           try {
@@ -76,7 +89,8 @@ export default function MotherVisits() {
 
           try {
             const reqRes = await requestsAPI.list({ FamilyId: family.familyId, Status: 'Pending', PageSize: 10 });
-            fetchedPending = reqRes.data?.items || (Array.isArray(reqRes.data) ? reqRes.data : []);
+            // ✅ التعديل الأول: استخراج الطلبات من requests.items حسب هيكل السواجر
+            fetchedPending = reqRes.data?.requests?.items || [];
           } catch (e) { console.warn("لم يتم العثور على طلبات معلقة بالسيرفر"); }
         }
 
@@ -97,7 +111,6 @@ export default function MotherVisits() {
 
   const now = new Date();
   
-  // ✅ التعديل هنا: الاعتماد على `endAt` للتحقق من الزيارات القادمة أو الحالية
   const upcomingVisits = visits
     .filter(v => new Date(v.endAt) > now && v.status !== 'Completed')
     .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
@@ -110,7 +123,9 @@ export default function MotherVisits() {
   const handleProcessRequest = async (requestId, isApproved, decisionNote = "") => {
     try {
       setIsProcessing(true);
-      await requestsAPI.process(requestId, { isApproved, decisionNote });
+      // ✅ التعديل الثاني: إرسال isAccepted و reasonNote ليتطابق مع السواجر
+      await requestsAPI.process(requestId, { isAccepted: isApproved, reasonNote: decisionNote });
+      
       setPendingRequests(prev => prev.filter(r => r.id !== requestId));
       setShowRejectModal(false);
       setRejectReason("");
@@ -480,7 +495,6 @@ export default function MotherVisits() {
                 يمكنك تحديد شخص واحد ليرافق الأطفال في هذه الزيارة. يرجى إدخال الرقم القومي الخاص به ليتم التحقق منه في مركز الرؤية.
               </p>
               
-              {/* رسالة الخطأ تظهر هنا داخل المودال */}
               {companionError && (
                 <div className="bg-red-50 border border-red-200 text-red-600 text-xs font-bold p-3 rounded-xl mb-4 flex items-start gap-2 animate-in slide-in-from-top-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />

@@ -22,7 +22,7 @@ const SchoolReports = () => {
   const [loadingReports, setLoadingReports] = useState(false);
   const [error, setError] = useState(null);
   
-  // 🚀 حالة جديدة لمعالجة خطأ الصلاحيات 403 القادم من الباك إند
+  // حالة لمعالجة خطأ الصلاحيات 403 القادم من الباك إند
   const [permissionError, setPermissionError] = useState(false);
 
   // 1. جلب قائمة الأبناء عند فتح الصفحة (المرحلة الأولى)
@@ -75,12 +75,10 @@ const SchoolReports = () => {
         
         setReports(response.data?.items || []);
       } catch (err) {
-        // 🚀 المعالجة الذكية للخطأ
+        // المعالجة الذكية للخطأ
         if (err.response && err.response.status === 403) {
-            // إذا كان الخطأ 403 (ChildNotInSchool)، نفعل حالة الخطأ بدون إشعار مزعج
             setPermissionError(true);
         } else if (err.response && err.response.status === 404) {
-            // لو لم يتم العثور على تقارير، نترك القائمة فارغة ببساطة
             setReports([]);
         } else {
             console.error("Error fetching reports:", err);
@@ -95,17 +93,40 @@ const SchoolReports = () => {
     fetchReports();
   }, [selectedChild]);
 
-  // دالة لتحميل التقرير الفعلي
-  const handleDownload = (documentId) => {
+  // ==========================================
+  // 🚀 بداية التعديل: الدالة الجديدة لتحميل الملف
+  // ==========================================
+  const handleDownload = async (documentId) => {
     if (!documentId) {
         toast.error("معرف الملف غير متاح");
         return;
     }
-    // بناء الرابط بناءً على الـ baseURL
-    const fileUrl = `${api.defaults.baseURL}/api/documents/${documentId}`;
-    window.open(fileUrl, '_blank');
-    toast.success("جاري فتح الملف...");
+
+    // إظهار رسالة تحميل للمستخدم
+    const toastId = toast.loading("جاري تجهيز الملف للتحميل...");
+
+    try {
+      // نداء الباك إند باستخدام الـ api instance بتاعك (اللي بيبعت التوكن تلقائياً)
+      const response = await api.get(`/api/documents/${documentId}`);
+      
+      // استخراج الرابط المباشر من رد السيرفر
+      const downloadUrl = response.data?.downloadUrl || response.data?.fileUrl;
+
+      if (downloadUrl) {
+        toast.success("تم التجهيز! جاري الفتح...", { id: toastId });
+        // فتح الرابط السري في تاب جديدة
+        window.open(downloadUrl, '_blank');
+      } else {
+        toast.error("عذراً، رابط الملف غير متوفر من الخادم", { id: toastId });
+      }
+    } catch (error) {
+      console.error("Error downloading document:", error);
+      toast.error("حدث خطأ أثناء جلب الملف. تأكد من صلاحياتك.", { id: toastId });
+    }
   };
+  // ==========================================
+  // نهاية التعديل
+  // ==========================================
 
   // واجهة التحميل الأولية للأطفال
   if (loadingChildren) {
@@ -190,12 +211,11 @@ const SchoolReports = () => {
               <Loader2 className="w-8 h-8 animate-spin text-[#1e3a8a]" />
             </div>
           ) : permissionError ? (
-            // 🚀 واجهة عرض خطأ الصلاحيات 403 بدلاً من الـ Toast
             <div className="bg-yellow-50 p-10 rounded-3xl flex flex-col items-center text-center border border-yellow-200 shadow-sm">
                 <FileWarning className="w-16 h-16 text-yellow-500 mb-4" />
                 <h3 className="text-xl font-bold text-yellow-800 mb-2">الصلاحيات غير مكتملة</h3>
                 <p className="text-yellow-700 max-w-md leading-relaxed">
-                    لا يمكن عرض تقارير المدرسة حالياً. يرجى مراجعة الإدارة لتحديث صلاحيات حسابات أولياء الأمور لتشمل قراءة التقارير.
+                  لا يمكن عرض تقارير المدرسة حالياً. يرجى مراجعة الإدارة لتحديث صلاحيات حسابات أولياء الأمور لتشمل قراءة التقارير.
                 </p>
             </div>
           ) : reports.length === 0 ? (

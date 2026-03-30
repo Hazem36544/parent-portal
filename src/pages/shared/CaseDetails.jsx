@@ -269,7 +269,7 @@ export default function CaseDetails() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                   <div className="bg-green-50 border border-green-100 p-4 rounded-2xl text-center">
                     <p className="text-xs text-green-600 mb-1">المبلغ المقرر</p>
-                    <p className="text-xl font-bold text-green-800">{data.alimony.amount?.toLocaleString('ar-EG')} ج.م</p>
+                    <p className="text-xl font-bold text-green-800">{(data.alimony.amount / 100)?.toLocaleString('ar-EG')} ج.م</p>
                   </div>
                   <div className="bg-gray-50 border border-gray-100 p-4 rounded-2xl text-center">
                     <p className="text-xs text-gray-500 mb-1">دورية الدفع</p>

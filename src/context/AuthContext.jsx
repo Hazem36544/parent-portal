@@ -28,15 +28,17 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = () => {
+        // 🚀 التعديل هنا: نكتفي بمسح البيانات فقط من الذاكرة
         localStorage.removeItem('wesal_parent_token');
         localStorage.removeItem('wesal_parent_user');
         setUser(null);
         setIsLoggedIn(false);
-        // التوجيه لصفحة الدخول الخاصة بالآباء بدلاً من المسار الرئيسي
-        window.location.href = '/parent/login'; 
+        
+        // تم حذف سطر window.location.href = '/parent/login'; من هنا
+        // لأن التوجيه الآمن يتم الآن من خلال زر تسجيل الخروج في ملف Sidebar.jsx
     };
 
-    // 🚀 التعديل هنا: استخراج الدور لتسهيل استخدامه في الراوتر
+    // استخراج الدور لتسهيل استخدامه في الراوتر
     const role = user?.role || null;
 
     return (

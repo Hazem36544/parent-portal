@@ -62,11 +62,27 @@ export default function Alimony() {
           if (foundAlimony) {
             setAlimonyDetails(foundAlimony);
             const payRes = await courtAPI.listPaymentsDueByAlimony(foundAlimony.id, { PageNumber: 1, PageSize: 100 });
-            allPayments = Array.isArray(payRes.data) ? payRes.data : (payRes.data?.items || []);
+            let rawPayments = Array.isArray(payRes.data) ? payRes.data : (payRes.data?.items || []);
             
+            let cleanPayments = [];
+            let seenPaymentDates = new Set();
+
+            rawPayments.sort((a, b) => (a.status === 'Paid' ? -1 : 1));
+
+            rawPayments.forEach(p => {
+                const dateOnly = p.dueDate.split('T')[0];
+                if (!seenPaymentDates.has(dateOnly)) {
+                    seenPaymentDates.add(dateOnly);
+                    cleanPayments.push(p);
+                }
+            });
+
+            allPayments = cleanPayments;
+            
+            // ✅ تم تعديل المنطق هنا لفصل الدفعات بدقة
             const now = new Date();
+            now.setHours(0, 0, 0, 0); // تصفير الساعات عشان المقارنة تبقى بالأيام بس
             
-            // ✅ تم إصلاح مشكلة الترتيب لتجنب أخطاء الـ null في حقل paidAt
             const paid = allPayments.filter(p => p.status === 'Paid' || p.status === 'مدفوعة');
             setPaidPayments(paid.sort((a, b) => {
               const dateA = new Date(a.paidAt || a.dueDate).getTime();
@@ -74,11 +90,23 @@ export default function Alimony() {
               return dateB - dateA;
             }));
 
-            const overdue = allPayments.filter(p => p.status !== 'Paid' && p.status !== 'مدفوعة' && new Date(p.dueDate) < now);
+            // الدفعات اللي عدى عليها اليوم ولسه ماتدفعتش
+            const overdue = allPayments.filter(p => {
+              if (p.status === 'Paid' || p.status === 'مدفوعة') return false;
+              const dueDate = new Date(p.dueDate);
+              dueDate.setHours(0, 0, 0, 0);
+              return dueDate < now; 
+            }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+            
             setOverduePayments(overdue);
 
-            const upcoming = allPayments.filter(p => p.status !== 'Paid' && p.status !== 'مدفوعة' && new Date(p.dueDate) >= now)
-                                        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+            // الدفعات المستحقة اليوم أو في المستقبل
+            const upcoming = allPayments.filter(p => {
+              if (p.status === 'Paid' || p.status === 'مدفوعة') return false;
+              const dueDate = new Date(p.dueDate);
+              dueDate.setHours(0, 0, 0, 0);
+              return dueDate >= now;
+            }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
             
             if (upcoming.length > 0) {
               setCurrentDue(upcoming[0]);
@@ -100,14 +128,9 @@ export default function Alimony() {
     try {
       setIsProcessingPayment(true);
       
-      // ✅ تم وضع روابط https لاختبار المشكلة.. 
-      // بمجرد رفع المشروع أو إصلاح الباك إند، قم بتبديلها بالأسطر المعطلة (المتعلقة بـ window.location.origin)
       const response = await courtAPI.initiateAlimonyPayment(paymentDueId, {
-        successUrl: `https://google.com?status=success`, // روابط مؤقتة للاختبار
-        cancelUrl: `https://google.com?status=cancel`    // روابط مؤقتة للاختبار
-        
-        // successUrl: `${window.location.origin}/parent/alimony/success`, 
-        // cancelUrl: `${window.location.origin}/parent/alimony` 
+        successUrl: `https://google.com?status=success`, 
+        cancelUrl: `https://google.com?status=cancel`    
       });
       
       if (response.data && response.data.url) {
@@ -117,14 +140,25 @@ export default function Alimony() {
       }
     } catch (error) {
       console.error("Payment Error:", error);
-      toast.error('حدث خطأ أثناء الاتصال ببوابة الدفع.');
+      toast.error('حدث خطأ أثناء الاتصال ببوابة الدفع. يرجى مراجعة الدعم الفني.');
     } finally {
       setIsProcessingPayment(false);
     }
   };
 
   const formatDate = (dateString) => new Date(dateString).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
-  const formatMoney = (amount) => amount?.toLocaleString('ar-EG');
+  const formatMoney = (amount) => (amount ? (amount / 100).toLocaleString('ar-EG') : '0');
+  
+  // دالة لحساب أيام التأخير
+  const getDelayDays = (dueDateString) => {
+    const dueDate = new Date(dueDateString);
+    dueDate.setHours(0, 0, 0, 0);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const diffTime = Math.abs(now - dueDate);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
 
   if (loading) {
     return (
@@ -273,7 +307,8 @@ export default function Alimony() {
                   <div className="flex flex-col gap-1.5 bg-white p-3 rounded-xl border border-gray-50">
                     <span className="text-gray-400 text-xs font-bold">الوقت المتبقي</span>
                     <span className="font-bold text-orange-600 text-sm">
-                      {Math.max(0, Math.ceil((new Date(currentDue.dueDate) - new Date()) / (1000 * 60 * 60 * 24)))} يوم
+                      {/* تعديل لعرض عدد الأيام المتبقية بشكل صحيح */}
+                      {Math.max(0, Math.ceil((new Date(currentDue.dueDate).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24)))} يوم
                     </span>
                   </div>
                   <div className="flex flex-col gap-1.5 bg-white p-3 rounded-xl border border-gray-50 col-span-2">
@@ -321,7 +356,8 @@ export default function Alimony() {
                         دفعة {formatDate(payment.dueDate)}
                       </span>
                       <span className="text-red-400 text-xs font-bold">
-                        متأخرة منذ {Math.floor((new Date() - new Date(payment.dueDate)) / (1000 * 60 * 60 * 24))} يوم
+                        {/* ✅ استخدام الدالة الجديدة لحساب أيام التأخير بشكل صحيح */}
+                        متأخرة منذ {getDelayDays(payment.dueDate)} يوم
                       </span>
                     </div>
                     <div className="flex items-center gap-4">

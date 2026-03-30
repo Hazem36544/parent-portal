@@ -68,7 +68,32 @@ export default function MotherAlimony() {
           if (foundAlimony) {
             setAlimonyDetails(foundAlimony);
             const payRes = await courtAPI.listPaymentsDueByAlimony(foundAlimony.id, { PageNumber: 1, PageSize: 100 });
-            allPayments = Array.isArray(payRes.data) ? payRes.data : (payRes.data?.items || []);
+            
+            let rawPayments = Array.isArray(payRes.data) ? payRes.data : (payRes.data?.items || []);
+            
+            // 🚀 التعديل السحري: فلتر التنظيف لمنع تكرار الدفعات لنفس الشهر/التاريخ
+            let cleanPayments = [];
+            let seenPaymentDates = new Set();
+
+            // إعطاء الأولوية للدفعات المسددة أو المسحوبة في حالة وجود تكرار
+            rawPayments.sort((a, b) => {
+              const aIsDone = a.status === 'Withdrawn' || a.status === 'مستلمة' || a.status === 'Paid' || a.status === 'مدفوعة';
+              const bIsDone = b.status === 'Withdrawn' || b.status === 'مستلمة' || b.status === 'Paid' || b.status === 'مدفوعة';
+              if (aIsDone && !bIsDone) return -1;
+              if (!aIsDone && bIsDone) return 1;
+              return 0;
+            });
+
+            rawPayments.forEach(p => {
+                if (!p.dueDate) return;
+                const dateOnly = p.dueDate.split('T')[0]; // استخراج التاريخ فقط
+                if (!seenPaymentDates.has(dateOnly)) {
+                    seenPaymentDates.add(dateOnly);
+                    cleanPayments.push(p);
+                }
+            });
+
+            allPayments = cleanPayments; // استخدام الدفعات النظيفة فقط
             
             const now = new Date();
             
@@ -135,7 +160,10 @@ export default function MotherAlimony() {
   };
 
   const formatDate = (dateString) => new Date(dateString).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
-  const formatMoney = (amount) => amount?.toLocaleString('ar-EG');
+  const formatMoney = (amount) => {
+    if (amount === null || amount === undefined) return '0';
+    return (amount / 100).toLocaleString('ar-EG');
+};
 
   if (loading) {
     return (
@@ -220,6 +248,10 @@ export default function MotherAlimony() {
       </div>
     );
   }
+
+  // تصنيف المتأخرات بدقة لفصل "المستحقة اليوم (0 تأخير)" عن "المتأخرة فعلياً (> 0 تأخير)"
+  const dueTodayList = overduePayments.filter(p => Math.floor((new Date() - new Date(p.dueDate)) / (1000 * 60 * 60 * 24)) <= 0);
+  const strictlyOverdueList = overduePayments.filter(p => Math.floor((new Date() - new Date(p.dueDate)) / (1000 * 60 * 60 * 24)) > 0);
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-8 pb-10 animate-in fade-in duration-500" dir="rtl">
@@ -314,8 +346,42 @@ export default function MotherAlimony() {
             </div>
           )}
 
-          {/* 🚀 البطاقة الحمراء: المتأخرات على الأب */}
-          {overduePayments.length > 0 && (
+          {/* 🚀 البطاقة الخضراء الفاتحة: الدفعات المستحقة اليوم (ولم تتأخر بعد) */}
+          {dueTodayList.length > 0 && (
+            <div className="bg-emerald-50/50 border border-emerald-100 rounded-[2rem] p-6 lg:p-8 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-32 h-32 bg-emerald-100/50 rounded-full blur-2xl -translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
+              
+              <div className="flex justify-between items-center mb-6 relative z-10">
+                <div>
+                  <h2 className="text-xl font-bold text-emerald-700 flex items-center gap-2 mb-1">
+                    <CheckCircle className="w-6 h-6" /> الدفعات المستحقة
+                  </h2>
+                  <p className="text-emerald-600/80 text-sm font-medium">نفقات حان موعد سدادها اليوم وفي انتظار الدفع</p>
+                </div>
+                <div className="text-left">
+                  <span className="text-xs text-gray-500 font-bold block mb-1">إجمالي المستحق</span>
+                  <span className="text-2xl font-bold text-emerald-600 font-mono">
+                    {formatMoney(dueTodayList.reduce((sum, p) => sum + p.amount, 0))} ج.م
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 relative z-10 max-h-56 overflow-y-auto pr-2 custom-scrollbar">
+                {dueTodayList.map(payment => (
+                  <div key={payment.id} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-gray-800 font-bold text-sm">استحقاق {formatDate(payment.dueDate)}</span>
+                      <span className="text-emerald-500 text-xs font-bold">مستحقة الدفع اليوم</span>
+                    </div>
+                    <span className="text-emerald-600 font-bold font-mono text-lg">{formatMoney(payment.amount)} ج.م</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 🚀 البطاقة الحمراء: المتأخرات على الأب (بعد انتهاء اليوم الأول) */}
+          {strictlyOverdueList.length > 0 && (
             <div className="bg-red-50/50 border border-red-100 rounded-[2rem] p-6 lg:p-8 shadow-sm relative overflow-hidden">
               <div className="absolute top-0 left-0 w-32 h-32 bg-red-100/50 rounded-full blur-2xl -translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
               
@@ -329,13 +395,13 @@ export default function MotherAlimony() {
                 <div className="text-left">
                   <span className="text-xs text-gray-500 font-bold block mb-1">إجمالي المتأخرات</span>
                   <span className="text-2xl font-bold text-red-600 font-mono">
-                    {formatMoney(overduePayments.reduce((sum, p) => sum + p.amount, 0))} ج.م
+                    {formatMoney(strictlyOverdueList.reduce((sum, p) => sum + p.amount, 0))} ج.م
                   </span>
                 </div>
               </div>
 
               <div className="flex flex-col gap-3 relative z-10 max-h-56 overflow-y-auto pr-2 custom-scrollbar">
-                {overduePayments.map(payment => (
+                {strictlyOverdueList.map(payment => (
                   <div key={payment.id} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-red-100 shadow-sm">
                     <div className="flex flex-col gap-1">
                       <span className="text-gray-800 font-bold text-sm">استحقاق {formatDate(payment.dueDate)}</span>
@@ -377,9 +443,9 @@ export default function MotherAlimony() {
                    <span className="text-2xl font-bold text-green-700 font-mono">{withdrawnPayments.length}</span>
                    <span className="text-green-600/80 text-xs font-bold">دفعة استُلمت</span>
                  </div>
-                 <div className={`${overduePayments.length > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'} border p-4 rounded-xl flex flex-col justify-center items-center text-center gap-1`}>
-                   <span className={`text-2xl font-bold font-mono ${overduePayments.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overduePayments.length}</span>
-                   <span className={`${overduePayments.length > 0 ? 'text-red-500/80' : 'text-gray-400'} text-xs font-bold`}>دفعة متأخرة</span>
+                 <div className={`${strictlyOverdueList.length > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'} border p-4 rounded-xl flex flex-col justify-center items-center text-center gap-1`}>
+                   <span className={`text-2xl font-bold font-mono ${strictlyOverdueList.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{strictlyOverdueList.length}</span>
+                   <span className={`${strictlyOverdueList.length > 0 ? 'text-red-500/80' : 'text-gray-400'} text-xs font-bold`}>دفعة متأخرة</span>
                  </div>
               </div>
             </div>

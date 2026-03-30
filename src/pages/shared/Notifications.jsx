@@ -2,17 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Bell, 
-  Settings, 
   Calendar, 
   DollarSign, 
   FileText, 
-  CalendarCheck, 
-  CheckCircle, 
   AlertTriangle, 
   ChevronRight,
+  Loader2,
   X,
-  Save,
-  Loader2
+  Info
 } from 'lucide-react';
 
 // استيراد الـ API
@@ -20,16 +17,13 @@ import { commonAPI } from '../../services/api';
 
 export default function Notifications() {
   const navigate = useNavigate();
-  
-  // حالات الواجهة (UI States)
-  const [showSettings, setShowSettings] = useState(false);
-  const [visits, setVisits] = useState(true);
-  const [alimony, setAlimony] = useState(true);
-  const [violations, setViolations] = useState(true);
 
   // حالات البيانات (Data States)
   const [data, setData] = useState({ items: [], unreadCount: 0 });
   const [isLoading, setIsLoading] = useState(true);
+  
+  // حالة النافذة المنبثقة (Popup State)
+  const [selectedNotification, setSelectedNotification] = useState(null);
 
   // 1. جلب الإشعارات من السيرفر
   const fetchNotifications = async () => {
@@ -52,46 +46,46 @@ export default function Notifications() {
     fetchNotifications();
   }, []);
 
-  // 2. تحديث حالة الإشعار إلى "مقروء"
-  const handleMarkAsRead = async (notificationId, currentStatus) => {
-    // إذا كان الإشعار مقروءاً مسبقاً، لا نفعل شيئاً
-    if (currentStatus === 'Read') return; 
+  // 2. معالجة النقر على الإشعار (فتح البوب أب وتحديث الحالة)
+  const handleNotificationClick = async (notification) => {
+    // فتح البوب أب لعرض التفاصيل
+    setSelectedNotification(notification);
 
-    try {
-      // إرسال الطلب للسيرفر
-      await commonAPI.markAsRead(notificationId);
-      
-      // تحديث الواجهة محلياً فوراً (Optimistic Update)
-      setData(prevData => ({
-        ...prevData,
-        unreadCount: Math.max(0, prevData.unreadCount - 1),
-        items: prevData.items.map(notif => 
-          notif.id === notificationId ? { ...notif, status: 'Read' } : notif
-        )
-      }));
-    } catch (error) {
-      console.error("خطأ في تحديث حالة الإشعار:", error);
+    // إذا كان الإشعار جديداً، قم بتحديث حالته في السيرفر
+    if (notification.status !== 'Read') {
+      try {
+        await commonAPI.markAsRead(notification.id);
+        
+        // تحديث الواجهة محلياً فوراً (Optimistic Update)
+        setData(prevData => ({
+          ...prevData,
+          unreadCount: Math.max(0, prevData.unreadCount - 1),
+          items: prevData.items.map(notif => 
+            notif.id === notification.id ? { ...notif, status: 'Read' } : notif
+          )
+        }));
+      } catch (error) {
+        console.error("خطأ في تحديث حالة الإشعار:", error);
+      }
     }
   };
 
   // 3. دالة لتحديد الأيقونة واللون بناءً على نوع الإشعار القادم من السيرفر
   const getNotificationStyle = (type) => {
-    switch(type) {
-      case 'Alimony':
-      case 'PaymentDue':
-        return { icon: DollarSign, color: "text-yellow-600", bg: "bg-yellow-50", title: "تنبيه نفقة" };
-      case 'Visitation':
-      case 'Schedule':
-        return { icon: Calendar, color: "text-green-600", bg: "bg-green-50", title: "تنبيه زيارة" };
-      case 'CourtCase':
-      case 'Document':
-        return { icon: FileText, color: "text-blue-600", bg: "bg-blue-50", title: "تحديث قضية" };
-      case 'ObligationAlert':
-      case 'Violation':
-        return { icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", title: "تنبيه هام" };
-      default:
-        return { icon: Bell, color: "text-gray-600", bg: "bg-gray-100", title: "إشعار نظام" };
+    const lowerType = type?.toLowerCase() || '';
+    if (lowerType.includes('alimony') || lowerType.includes('payment')) {
+      return { icon: DollarSign, color: "text-yellow-600", bg: "bg-yellow-50", title: "تنبيه نفقة" };
     }
+    if (lowerType.includes('visitation') || lowerType.includes('schedule') || lowerType.includes('custody')) {
+      return { icon: Calendar, color: "text-green-600", bg: "bg-green-50", title: "تنبيه زيارة وحضانة" };
+    }
+    if (lowerType.includes('case') || lowerType.includes('document') || lowerType.includes('school')) {
+      return { icon: FileText, color: "text-blue-600", bg: "bg-blue-50", title: "تحديث ملفات وقضايا" };
+    }
+    if (lowerType.includes('alert') || lowerType.includes('violation')) {
+      return { icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", title: "تنبيه هام" };
+    }
+    return { icon: Bell, color: "text-gray-600", bg: "bg-gray-100", title: "إشعار نظام" };
   };
 
   // 4. دالة لتنسيق الوقت (منذ كم يوم)
@@ -109,10 +103,18 @@ export default function Notifications() {
     return date.toLocaleDateString('ar-EG');
   };
 
+  // دالة مساعدة لتنسيق الوقت واليوم في النافذة المنبثقة
+  const formatFullDateTime = (dateString) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('ar-EG', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-8 pb-10 animate-in fade-in duration-500" dir="rtl">
       
-      {/* Header (Standard Rounded Blue Header) */}
+      {/* Header */}
       <div className="relative w-full bg-[#1e3a8a] rounded-[2rem] p-6 text-white flex items-center justify-between overflow-hidden shadow-xl">
         <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-2xl pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
         <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-400/10 rounded-full blur-2xl pointer-events-none translate-y-1/2 -translate-x-1/2"></div>
@@ -145,18 +147,6 @@ export default function Notifications() {
         </div>
       </div>
 
-      {/* Settings Bar */}
-      <button 
-        onClick={() => setShowSettings(true)}
-        className="w-full bg-white shadow-sm border border-gray-100 rounded-2xl p-5 flex items-center justify-between hover:shadow-md transition-all group"
-      >
-        <div className="flex items-center gap-3">
-          <Settings className="w-5 h-5 text-gray-400 group-hover:text-[#1e3a8a] transition-colors" />
-          <span className="text-gray-700 font-bold text-sm">إعدادات الإشعارات</span>
-        </div>
-        <ChevronRight className="w-5 h-5 text-gray-300 rtl:-scale-x-100 group-hover:-translate-x-1 transition-transform" />
-      </button>
-
       {/* Notifications Grid */}
       {isLoading ? (
          <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -169,31 +159,31 @@ export default function Notifications() {
             data.items.map((notification) => {
               const style = getNotificationStyle(notification.type);
               const Icon = style.icon;
-              const isUnread = notification.status !== 'Read'; // التحقق من حالة القراءة
+              const isUnread = notification.status !== 'Read';
 
               return (
                 <div 
                   key={notification.id} 
-                  onClick={() => handleMarkAsRead(notification.id, notification.status)}
-                  className={`bg-white shadow-sm border ${isUnread ? 'border-blue-200' : 'border-gray-100 opacity-75'} rounded-2xl p-6 flex items-start justify-between relative hover:shadow-md transition-shadow cursor-pointer`}
+                  onClick={() => handleNotificationClick(notification)}
+                  className={`bg-white shadow-sm border ${isUnread ? 'border-blue-300 ring-2 ring-blue-50' : 'border-gray-100 opacity-80'} rounded-2xl p-6 flex items-start justify-between relative hover:shadow-md transition-all cursor-pointer transform hover:-translate-y-1`}
                 >
                   {isUnread && (
-                    <span className="absolute top-6 right-5 w-2 h-2 bg-blue-600 rounded-full" title="غير مقروء"></span>
+                    <span className="absolute top-6 right-5 w-2 h-2 bg-blue-600 rounded-full animate-pulse" title="غير مقروء"></span>
                   )}
                   
-                  <div className="flex flex-col gap-1.5 pr-4 flex-1">
-                    <h3 className={`text-sm ${isUnread ? 'text-gray-900 font-bold' : 'text-gray-700 font-bold'}`}>
+                  <div className="flex flex-col gap-2 pr-4 flex-1">
+                    <h3 className={`text-sm ${isUnread ? 'text-gray-900 font-extrabold' : 'text-gray-700 font-bold'}`}>
                        {style.title}
                     </h3>
-                    <p className="text-gray-500 text-xs leading-relaxed max-w-[90%]">
+                    <p className={`text-xs leading-relaxed max-w-[95%] truncate ${isUnread ? 'text-gray-700 font-medium' : 'text-gray-500'}`} dir="auto">
                       {notification.content}
                     </p>
-                    <span className="text-gray-400 text-[11px] mt-2 font-medium">
+                    <span className="text-gray-400 text-[10px] mt-1 font-bold">
                       {timeAgo(notification.sentAt)}
                     </span>
                   </div>
 
-                  <div className={`p-3 rounded-2xl shrink-0 ${style.bg}`}>
+                  <div className={`p-3 rounded-2xl shrink-0 transition-colors ${isUnread ? style.bg.replace('50', '100') : style.bg}`}>
                     <Icon className={`w-6 h-6 ${style.color}`} />
                   </div>
                 </div>
@@ -208,123 +198,58 @@ export default function Notifications() {
         </div>
       )}
 
-      {/* Settings Modal Overlay */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          
-          {/* Modal Container */}
-          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 shadow-2xl">
+      {/* 🚀 Popup Modal لعرض تفاصيل الإشعار */}
+      {selectedNotification && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl relative overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
             
             {/* Modal Header */}
-            <div className="bg-[#1e3a8a] text-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                <h2 className="font-bold">إعدادات الإشعارات</h2>
+            <div className={`p-6 flex items-center justify-between ${getNotificationStyle(selectedNotification.type).bg} border-b border-gray-100`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 bg-white rounded-xl shadow-sm ${getNotificationStyle(selectedNotification.type).color}`}>
+                  {React.createElement(getNotificationStyle(selectedNotification.type).icon, { className: "w-6 h-6" })}
+                </div>
+                <h3 className="font-bold text-gray-800 text-lg">
+                  {getNotificationStyle(selectedNotification.type).title}
+                </h3>
               </div>
               <button 
-                onClick={() => setShowSettings(false)}
-                className="hover:bg-white/20 p-1.5 rounded-lg transition-colors"
+                onClick={() => setSelectedNotification(null)}
+                className="bg-white/50 hover:bg-white text-gray-500 p-2 rounded-full transition-colors shadow-sm"
               >
-                <X className="w-5 h-5" />
+                <X size={20} />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6">
-              <p className="text-gray-500 text-sm text-right mb-4">اختر أنواع التنبيهات التي تريد استلامها</p>
-              
-              {/* Toggles */}
-              <div className="flex flex-col gap-3 mb-6">
-                
-                {/* Visits Alert Toggle */}
-                <div className="border border-gray-100 rounded-xl p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-green-50 p-2.5 rounded-xl shrink-0">
-                      <Calendar className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800 text-sm">تنبيهات الزيارات</h4>
-                      <p className="text-xs text-gray-500">إشعارات مواعيد الزيارات</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setVisits(!visits)}
-                    className={`relative w-11 h-6 rounded-full transition-colors duration-200 ease-in-out shrink-0 ${visits ? 'bg-[#1e3a8a]' : 'bg-gray-300'}`}
-                  >
-                    <span 
-                      className={`absolute top-0.5 right-0.5 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-200 ease-in-out ${visits ? '-translate-x-5' : 'translate-x-0'}`}
-                    />
-                  </button>
-                </div>
-
-                {/* Alimony Alert Toggle */}
-                <div className="border border-gray-100 rounded-xl p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-yellow-50 p-2.5 rounded-xl shrink-0">
-                      <DollarSign className="w-5 h-5 text-yellow-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800 text-sm">تنبيهات النفقة</h4>
-                      <p className="text-xs text-gray-500">إشعارات النفقة والمدفوعات</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setAlimony(!alimony)}
-                    className={`relative w-11 h-6 rounded-full transition-colors duration-200 ease-in-out shrink-0 ${alimony ? 'bg-[#1e3a8a]' : 'bg-gray-300'}`}
-                  >
-                    <span 
-                      className={`absolute top-0.5 right-0.5 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-200 ease-in-out ${alimony ? '-translate-x-5' : 'translate-x-0'}`}
-                    />
-                  </button>
-                </div>
-
-                {/* Violations Alert Toggle */}
-                <div className="border border-gray-100 rounded-xl p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-red-50 p-2.5 rounded-xl shrink-0">
-                      <AlertTriangle className="w-5 h-5 text-red-500" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800 text-sm">تنبيهات المخالفات</h4>
-                      <p className="text-xs text-gray-500">إشعارات المخالفات والتحذيرات</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setViolations(!violations)}
-                    className={`relative w-11 h-6 rounded-full transition-colors duration-200 ease-in-out shrink-0 ${violations ? 'bg-[#1e3a8a]' : 'bg-gray-300'}`}
-                  >
-                    <span 
-                      className={`absolute top-0.5 right-0.5 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-200 ease-in-out ${violations ? '-translate-x-5' : 'translate-x-0'}`}
-                    />
-                  </button>
-                </div>
-
-              </div>
-              
-              {/* Info Box */}
-              <div className="bg-gray-50 text-gray-500 text-[11px] p-3 rounded-xl text-center mb-6 border border-gray-100">
-                سيتم إرسال التنبيهات المفعلة عبر الإشعارات والبريد الإلكتروني
+            <div className="p-8 flex flex-col gap-6">
+              <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+                <p className="text-gray-700 text-sm leading-relaxed font-medium" dir="auto" style={{ wordBreak: 'break-word' }}>
+                  {selectedNotification.content}
+                </p>
               </div>
 
-              {/* Modal Footer Buttons */}
-              <div className="grid grid-cols-2 gap-3 mt-4">
-                <button 
-                  onClick={() => setShowSettings(false)}
-                  className="bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2 text-sm"
-                >
-                  <X className="w-4 h-4" />
-                  إلغاء
-                </button>
-                <button 
-                  onClick={() => setShowSettings(false)}
-                  className="bg-[#1e3a8a] text-white font-bold py-3 rounded-xl hover:bg-blue-900 transition-all flex items-center justify-center gap-2 text-sm"
-                >
-                  <Save className="w-4 h-4" />
-                  حفظ الإعدادات
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-xs text-gray-500 font-bold px-2">
+                   <Info className="w-4 h-4" />
+                   <span>تاريخ الإشعار</span>
+                </div>
+                <div className="bg-blue-50/50 text-blue-800 px-4 py-3 rounded-xl border border-blue-100 text-sm font-medium">
+                  {formatFullDateTime(selectedNotification.sentAt)}
+                </div>
               </div>
-
             </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 pt-0 mt-auto">
+              <button 
+                onClick={() => setSelectedNotification(null)}
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-xl transition-colors"
+              >
+                إغلاق
+              </button>
+            </div>
+
           </div>
         </div>
       )}

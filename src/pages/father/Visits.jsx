@@ -60,8 +60,22 @@ export default function Visits() {
           setFamilyData(family);
           
           try {
-            const visitsRes = await visitationAPI.list({ FamilyId: family.familyId, PageSize: 50 });
-            fetchedVisits = visitsRes.data?.items || (Array.isArray(visitsRes.data) ? visitsRes.data : []);
+            const visitsRes = await visitationAPI.list({ FamilyId: family.familyId, PageSize: 100 }); 
+            let rawVisits = visitsRes.data?.items || (Array.isArray(visitsRes.data) ? visitsRes.data : []);
+
+            // 🚀 التعديل السحري: فلتر التنظيف لمنع التكرار (Deduplication)
+            let cleanVisits = [];
+            let seenVisitDates = new Set();
+
+            rawVisits.forEach(v => {
+                const dateOnly = v.startAt.split('T')[0]; 
+                if (!seenVisitDates.has(dateOnly)) {
+                    seenVisitDates.add(dateOnly);
+                    cleanVisits.push(v);
+                }
+            });
+
+            fetchedVisits = cleanVisits; // استخدام المصفوفة النظيفة
           } catch(e) { console.warn("لم يتم العثور على زيارات بالسيرفر"); }
 
           try {
@@ -72,37 +86,6 @@ export default function Visits() {
                 fetchedSchedule = scheduleRes.data;
             }
           } catch (e) { console.warn("لم يتم العثور على جدول رؤية بالسيرفر"); }
-        }
-
-        // =========================================================
-        // نظام الطوارئ: توليد بيانات تجريبية لو السيرفر فارغ تماماً
-        // =========================================================
-        if (fetchedVisits.length === 0 && !fetchedSchedule) {
-          const today = new Date();
-          const thisMonth = today.getMonth();
-          const thisYear = today.getFullYear();
-          
-          // إنشاء جدول وهمي يبدأ من اليوم ويتكرر أسبوعياً
-          fetchedSchedule = { 
-            frequency: 'Weekly', 
-            startTime: '21:00:00', 
-            endTime: '23:00:00',
-            startDate: new Date(thisYear, thisMonth, today.getDate() - 7).toISOString() 
-          };
-
-          // زيارات وهمية
-          fetchedVisits = [
-            { 
-              id: "mock-1", 
-              startAt: new Date(thisYear, thisMonth, today.getDate() - 7, 21, 0).toISOString(), 
-              endAt: new Date(thisYear, thisMonth, today.getDate() - 7, 23, 0).toISOString(), 
-              status: 'Completed',
-              nonCustodialCheckedInAt: new Date(thisYear, thisMonth, today.getDate() - 7, 20, 50).toISOString(),
-              completedAt: new Date(thisYear, thisMonth, today.getDate() - 7, 23, 5).toISOString()
-            },
-            { id: "mock-2", startAt: new Date(thisYear, thisMonth, today.getDate(), 21, 0).toISOString(), endAt: new Date(thisYear, thisMonth, today.getDate(), 23, 0).toISOString(), status: 'Scheduled' },
-            { id: "mock-3", startAt: new Date(thisYear, thisMonth, today.getDate() + 7, 21, 0).toISOString(), endAt: new Date(thisYear, thisMonth, today.getDate() + 7, 23, 0).toISOString(), status: 'Scheduled' }
-          ];
         }
 
         setVisits(fetchedVisits);
@@ -124,17 +107,19 @@ export default function Visits() {
       toast.error("يرجى إدخال رقم قومي صحيح مكون من 14 رقم");
       return;
     }
-    if(selectedVisitId?.toString().startsWith('mock')) {
-      setVisits(visits.map(v => v.id === selectedVisitId ? { ...v, companionNationalId } : v));
-      setShowCompanionModal(false); setCompanionNationalId(''); toast.success("تم تسجيل المرافق (تجريبي)");
-      return;
-    }
+
     try {
       setIsSubmittingCompanion(true);
       await visitationAPI.setCompanion(selectedVisitId, { companionNationalId });
       setVisits(visits.map(v => v.id === selectedVisitId ? { ...v, companionNationalId } : v));
-      setShowCompanionModal(false); setCompanionNationalId(''); toast.success("تم تسجيل المرافق بنجاح");
-    } catch (error) { toast.error("فشل تسجيل المرافق."); } finally { setIsSubmittingCompanion(false); }
+      setShowCompanionModal(false); 
+      setCompanionNationalId(''); 
+      toast.success("تم تسجيل المرافق بنجاح");
+    } catch (error) { 
+      toast.error("فشل تسجيل المرافق."); 
+    } finally { 
+      setIsSubmittingCompanion(false); 
+    }
   };
 
   const handleStaySubmit = async (e) => {
@@ -143,23 +128,39 @@ export default function Visits() {
       try {
           setIsSubmittingStay(true);
           if(requestsAPI.create) await requestsAPI.create({ startDate: stayRequest.startDate, endDate: stayRequest.endDate, reason: stayRequest.reason });
-          toast.success("تم رفع الطلب"); setShowStayModal(false); setStayRequest({ startDate: '', endDate: '', reason: '' });
-      } catch (error) { toast.error("حدث خطأ"); } finally { setIsSubmittingStay(false); }
+          toast.success("تم رفع الطلب بنجاح"); 
+          setShowStayModal(false); 
+          setStayRequest({ startDate: '', endDate: '', reason: '' });
+      } catch (error) { 
+          toast.error("حدث خطأ أثناء رفع الطلب"); 
+      } finally { 
+          setIsSubmittingStay(false); 
+      }
   };
 
   const handleCancelVisit = async (e) => {
       e.preventDefault();
       if(!cancelReason) { toast.error("أدخل السبب"); return; }
-      if(selectedVisitId?.toString().startsWith('mock')) { toast.success("تم الرفع (تجريبي)"); setShowCancelModal(false); setCancelReason(''); return; }
+      
       try {
           setIsCanceling(true);
           await complaintsAPI.create({ familyId: familyData.familyId, type: "CancelVisit", description: cancelReason });
-          toast.success("تم رفع الطلب"); setShowCancelModal(false); setCancelReason('');
-      } catch(error) { toast.error("فشل"); } finally { setIsCanceling(false); }
+          toast.success("تم رفع طلب إلغاء الزيارة"); 
+          setShowCancelModal(false); 
+          setCancelReason('');
+      } catch(error) { 
+          toast.error("فشل رفع طلب الإلغاء"); 
+      } finally { 
+          setIsCanceling(false); 
+      }
   };
 
   const now = new Date();
-  const pastVisits = visits.filter(v => new Date(v.startAt) <= now || v.status === 'Cancelled').sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+  
+  // فلترة وترتيب الزيارات السابقة 
+  const pastVisits = visits
+    .filter(v => new Date(v.startAt) <= now || v.status === 'Cancelled')
+    .sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
 
   const formatDate = (dateString) => new Date(dateString).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const formatTime = (dateString) => new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -168,17 +169,20 @@ export default function Visits() {
       switch(freq) { case 'Weekly': return 'أسبوعياً'; case 'BiWeekly': return 'كل أسبوعين'; case 'Monthly': return 'شهرياً'; default: return freq || 'محددة'; }
   };
 
-  // 🚀 --- دوال التقويم السحرية (Recurrence Engine) ---
+  // 🚀 --- دوال التقويم السحرية ---
   const daysInMonth = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth(), 1).getDay();
   const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
   const daysOfWeek = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
 
-  const explicitVisitDates = visits.filter(v => v.status !== 'Cancelled').map(v => {
-      const d = new Date(v.startAt);
-      d.setHours(0, 0, 0, 0); 
-      return d.getTime();
-  });
+  // تحديد أيام الزيارة في التقويم
+  const explicitVisitDates = Array.from(new Set(
+    visits.filter(v => v.status !== 'Cancelled').map(v => {
+        const d = new Date(v.startAt);
+        d.setHours(0, 0, 0, 0); 
+        return d.getTime();
+    })
+  ));
 
   const handlePrevMonth = () => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1));

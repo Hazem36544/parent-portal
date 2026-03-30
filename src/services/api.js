@@ -174,7 +174,7 @@ export const alertsAPI = {
  */
 export const requestsAPI = {
     list: (params) => api.get('/api/custody-requests', { params }),
-    process: (id, data) => api.patch(`/api/custody-requests/${id}/process`, data),
+    process: (id, data) => api.patch(`/api/custody-requests/${id}/respond`, data), // ✅ تم التعديل لتطابق السواجر
     create: (data) => api.post('/api/custody-requests', data),
 };
 

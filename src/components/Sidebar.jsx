@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-// 🚀 1. استدعاء الـ Hook الخاص بالذاكرة
 import { useAuth } from '../context/AuthContext'; 
 import { 
   Home, 
@@ -14,11 +13,13 @@ import {
   LogOut 
 } from 'lucide-react';
 
-// 🚀 2. إزالة onLogout من الـ props لأننا سنتعامل معها داخلياً
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth(); // 🚀 3. استخراج دالة الخروج
+  const { logout } = useAuth(); 
+  
+  // 🚀 إضافة State للتحكم في حالة خطأ الصورة
+  const [logoError, setLogoError] = useState(false);
   
   const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home, path: '/parent/dashboard' },
@@ -31,10 +32,18 @@ export default function Sidebar() {
     { id: 'account', label: 'الحساب', icon: User, path: '/parent/account' }
   ];
 
-  // 🚀 4. دالة مخصصة للخروج والتوجيه
+  // 🚀 التعديل الجذري والآمن لتسجيل الخروج
   const handleLogout = () => {
-    logout(); // مسح التوكن وبيانات المستخدم من localStorage
-    navigate('/parent/login'); // التوجيه الفوري لصفحة الدخول
+    // 1. مسح البيانات من الـ Context
+    logout(); 
+    
+    // 2. توجيه المتصفح إجبارياً للرابط الصحيح لتجنب الشاشة البيضاء تماماً
+    window.location.replace(`${import.meta.env.BASE_URL}#/parent/login`);
+    
+    // 3. إعادة تحميل سريعة للصفحة لضمان مسح أي كاش في الذاكرة (ضمان 100%)
+    setTimeout(() => {
+        window.location.reload();
+    }, 100);
   };
 
   return (
@@ -43,14 +52,20 @@ export default function Sidebar() {
       dir="rtl"
     >
       
-      {/* --- 1. الشعار --- */}
+      {/* --- 1. الشعار بطريقة آمنة جداً تمنع الأخطاء --- */}
       <div className="mb-6 flex-shrink-0 w-full flex justify-center">
-        <img 
-          src="/logo.svg" 
-          alt="شعار" 
-          className="w-20 h-20 object-contain hover:scale-110 transition-transform duration-300 drop-shadow-xl"
-          onError={(e) => { e.target.src = 'https://via.placeholder.com/80?text=Logo'; }} 
-        />
+        {!logoError ? (
+          <img 
+            src={`${import.meta.env.BASE_URL}logo.svg`} 
+            alt="شعار" 
+            className="w-24 h-24 object-contain hover:scale-110 transition-transform duration-300 drop-shadow-xl"
+            onError={() => setLogoError(true)} 
+          />
+        ) : (
+          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-[#1e3a8a] font-extrabold text-xl shadow-lg border-2 border-blue-200">
+            وصال
+          </div>
+        )}
       </div>
 
       {/* --- 2. الأيقونات والنصوص --- */}
@@ -85,7 +100,7 @@ export default function Sidebar() {
       {/* --- 3. خروج --- */}
       <div className="mt-auto pt-4 w-full px-3 pb-2">
         <button
-          onClick={handleLogout} // 🚀 5. ربط الزر بالدالة الجديدة
+          onClick={handleLogout} 
           className="w-full py-3 flex flex-col items-center justify-center gap-1 rounded-2xl text-red-300 hover:bg-red-500/20 hover:text-red-100 transition-all duration-300 border border-transparent hover:border-red-500/20"
         >
           <LogOut className="w-6 h-6" />
