@@ -1,5 +1,5 @@
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; // 👈 تم تغيير BrowserRouter إلى HashRouter
-// 🚀 استيراد الـ AuthProvider والـ Hook الخاص بالذاكرة
+import React from 'react';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext'; 
 
 import ParentLogin from './pages/shared/ParentLogin';
@@ -19,19 +19,64 @@ import FatherAlimony from './pages/father/Alimony';
 import ScrollToTop from './components/ScrollToTop';
 import './App.css';
 
-// 🚀 فصلنا الراوتر في مكون فرعي علشان نقدر نستخدم useAuth (لأن الـ Hook لازم يكون جوه الـ Provider)
+// ✅ 1. مكون حماية المسارات (ProtectedRoute) لمنع الدخول بدون جلسة نشطة
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center font-bold text-[#1e3a8a]">جاري التحقق من الصلاحيات...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/parent/login" replace />;
+  }
+
+  return children;
+};
+
+// 🚀 فصلنا الراوتر في مكون فرعي علشان نقدر نستخدم useAuth
 function AppRoutes() {
-  const { role } = useAuth(); // سحبنا الدور (أب أو أم) من الذاكرة
+  const { role, isAuthenticated, isLoading } = useAuth(); 
+  
+  // التحقق من أوامر تغيير الباسورد الإجبارية من sessionStorage
+  const needsPasswordChange = sessionStorage.getItem('force_change_password') === 'true';
+
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center font-bold text-[#1e3a8a]">جاري التحميل...</div>;
+  }
 
   return (
     <>
       <ScrollToTop />
       <Routes>
-        <Route path="/" element={<Navigate to="/parent/login" replace />} />
-        <Route path="/parent/login" element={<ParentLogin />} />
+        {/* ✅ 2. توجيه ذكي للمسار الرئيسي */}
+        <Route 
+          path="/" 
+          element={
+            (isAuthenticated && !needsPasswordChange) 
+              ? <Navigate to="/parent/dashboard" replace /> 
+              : <Navigate to="/parent/login" replace />
+          } 
+        />
+        
+        <Route 
+          path="/parent/login" 
+          element={
+            (isAuthenticated && !needsPasswordChange) 
+              ? <Navigate to="/parent/dashboard" replace /> 
+              : <ParentLogin />
+          } 
+        />
 
-        {/* مجموعة مسارات الآباء (محمية بداخل الـ Layout) */}
-        <Route path="/parent" element={<ParentLayout />}>
+        {/* ✅ 3. حماية مجموعة مسارات الآباء بالكامل بوضعها داخل ProtectedRoute */}
+        <Route 
+          path="/parent" 
+          element={
+            <ProtectedRoute>
+              <ParentLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Navigate to="dashboard" replace />} />
           
           {/* --- المسارات المشتركة (نفس الشاشة للطرفين) --- */}
@@ -52,6 +97,9 @@ function AppRoutes() {
             element={role === 'father' ? <FatherAlimony /> : <MotherAlimony />} 
           />
         </Route>
+
+        {/* التقاط أي مسار غير معروف وإرجاعه للرئيسية */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

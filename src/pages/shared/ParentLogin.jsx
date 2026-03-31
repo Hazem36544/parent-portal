@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Lock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext'; 
 import { authAPI } from '../../services/api'; 
 
@@ -8,7 +8,12 @@ const parseJwt = (token) => {
   try {
     const base64Url = token.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+    // إضافة علامات التكملة لتجنب خطأ InvalidCharacterError
+    let paddedBase64 = base64;
+    while (paddedBase64.length % 4 !== 0) {
+      paddedBase64 += "=";
+    }
+    const jsonPayload = decodeURIComponent(atob(paddedBase64).split('').map(function(c) {
         return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
     }).join(''));
     return JSON.parse(jsonPayload);
@@ -22,7 +27,7 @@ const ParentLogin = () => {
   const { login } = useAuth(); 
   const [step, setStep] = useState('login');
   
-  // 🚀 حالة جديدة لحفظ التوكن المؤقت دون تفعيل النظام العام
+  // حالة لحفظ التوكن المؤقت دون تفعيل النظام العام
   const [tempToken, setTempToken] = useState(null);
   
   const [nationalId, setNationalId] = useState('');
@@ -38,6 +43,22 @@ const ParentLogin = () => {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // =========================================================================
+  // التنظيف الذكي والتقاط أمر التغيير الإجباري (باستخدام sessionStorage)
+  // =========================================================================
+  useEffect(() => {
+    if (sessionStorage.getItem('force_change_password') === 'true') {
+      setStep('change_password');
+      setPassword('');
+      setErrorMessage('يرجى تغيير كلمة المرور المؤقتة قبل الدخول');
+    } else {
+      // تنظيف التابة الحالية فقط
+      sessionStorage.removeItem('wesal_parent_token');
+      sessionStorage.removeItem('wesal_parent_user');
+      sessionStorage.removeItem('force_change_password');
+    }
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -61,12 +82,12 @@ const ParentLogin = () => {
       const isTemporary = decodedToken?.tmp_pwd === "True" || decodedToken?.tmp_pwd === true || decodedToken?.tmp_pwd === "true";
 
       if (isTemporary) {
-        // 🚀 التعديل الجوهري: نحفظ التوكن هنا فقط، ولا نستدعي دالة login() الخاصة بالنظام
+        // نحفظ التوكن هنا فقط، ولا نستدعي دالة login() الخاصة بالنظام
         setTempToken(token);
         setCurrentPassword(pass);
         setStep('change_password');
         setIsLoading(false);
-        return; // نوقف التنفيذ هنا علشان ميروحش للداشبورد
+        return; 
       }
 
       // إذا لم تكن كلمة المرور مؤقتة (الدخول الطبيعي أو بعد التغيير بنجاح)
@@ -79,8 +100,10 @@ const ParentLogin = () => {
         name: decodedToken?.name || (isMother ? 'حساب الأم' : 'حساب الأب') 
       };
 
-      // 🚀 هنا فقط نفعل الدخول العام ونتوجه للداشبورد
+      // 🚀 تفعيل الدخول العام
       login(userData, token);
+      
+      // ✅ التعديل هنا: التوجيه للمسار المحمي الصحيح
       navigate('/parent/dashboard');
 
     } catch (error) {
@@ -103,7 +126,7 @@ const ParentLogin = () => {
          const firstErrorKey = Object.keys(serverError.errors)[0];
          setErrorMessage(serverError.errors[firstErrorKey][0]);
       } else {
-         setErrorMessage(error.message || 'الرقم القومي أو كلمة المرور غير صحيحة');
+         setErrorMessage(serverError?.detail || serverError?.title || 'الرقم القومي أو كلمة المرور غير صحيحة');
       }
     } finally {
       setIsLoading(false);
@@ -122,15 +145,16 @@ const ParentLogin = () => {
     setErrorMessage('');
 
     try {
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://wesal.runasp.net';
+      
       // 🚀 استخدام fetch مباشر لتمرير التوكن المؤقت في الهيدر، لتفادي مشاكل الـ Router
-      const response = await fetch('https://wesal.runasp.net/api/users/change-password', {
+      const response = await fetch(`${baseUrl}/api/users/change-password`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${tempToken}` // نستخدم التوكن المؤقت هنا
         },
         body: JSON.stringify({
-          nationalId: nationalId.trim(),
           oldPassword: currentPassword, 
           newPassword: newPassword
         })
@@ -142,6 +166,9 @@ const ParentLogin = () => {
          catch(err) { errorData = { detail: "حدث خطأ غير متوقع أثناء تغيير كلمة المرور" }; }
          throw { response: { data: errorData } }; // لمحاكاة شكل خطأ Axios
       }
+
+      // تنظيف أمر التغيير الإجباري بعد النجاح
+      sessionStorage.removeItem('force_change_password');
 
       // 🚀 بعد نجاح التغيير، نعمل تسجيل دخول بالباسورد الجديدة عشان ناخد التوكن الدائم
       await executeRealLogin(nationalId.trim(), newPassword);
@@ -172,19 +199,19 @@ const ParentLogin = () => {
                  src={`${import.meta.env.BASE_URL}logo.svg`} 
                  alt="شعار محكمة الأسرة" 
                  className="w-full h-full object-contain"
-                 onError={(e) => { e.target.src = '/logo.svg'; }}
+                 onError={(e) => { e.target.src = 'https://placehold.co/128x128/png?text=Wisal'; }}
                />
             </div>
-            <h1 className="text-2xl font-bold text-[#1e3a8a] mb-1">نظام إدارة الاباء</h1>
-            <p className="text-gray-500">لم الشمل</p>
+            <h1 className="text-2xl font-bold text-[#1e3a8a] mb-1">نظام إدارة الآباء</h1>
+            <p className="text-gray-500">بوابة وصال - لم الشمل</p>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg p-8 w-full">
+          <div className="bg-white rounded-2xl shadow-lg p-8 w-full border border-gray-100">
             <h2 className="text-xl font-bold text-center text-gray-800 mb-6">تسجيل الدخول</h2>
             {errorMessage && (
-              <div className="bg-red-50 text-red-600 p-3 rounded-xl mb-6 flex items-center gap-2 text-sm border border-red-100">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <span>{errorMessage}</span>
+              <div className="bg-red-50 text-red-600 p-3 rounded-xl mb-6 flex items-start gap-2 text-sm border border-red-100">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{errorMessage}</span>
               </div>
             )}
             <form onSubmit={handleLogin} className="space-y-5">
@@ -195,9 +222,11 @@ const ParentLogin = () => {
                   placeholder="أدخل الرقم القومي"
                   value={nationalId}
                   onChange={(e) => setNationalId(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-100 rounded-full border-none focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] transition-all font-mono"
                   required
                   disabled={isLoading}
+                  dir="ltr"
+                  style={{ textAlign: 'right' }}
                 />
               </div>
               <div className="space-y-2 relative">
@@ -208,22 +237,20 @@ const ParentLogin = () => {
                     placeholder="أدخل كلمة المرور"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full py-3 bg-gray-100 rounded-full border-none focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] transition-all pr-4 pl-12"
+                    className="w-full py-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] transition-all pr-4 pl-12 font-mono text-left"
                     required
                     disabled={isLoading}
+                    dir="ltr"
                   />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute left-4 text-gray-500 hover:text-gray-700 focus:outline-none" disabled={isLoading}>
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute left-4 text-gray-400 hover:text-[#1e3a8a] focus:outline-none transition-colors" disabled={isLoading}>
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
-              <button type="submit" disabled={isLoading} className={`w-full text-white font-medium py-3 rounded-full transition-colors mt-6 shadow-md flex justify-center items-center gap-2 ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-[#1e3a8a] hover:bg-blue-900'}`}>
+              <button type="submit" disabled={isLoading} className={`w-full text-white font-bold py-3.5 rounded-xl transition-all mt-6 shadow-lg shadow-blue-900/20 flex justify-center items-center gap-2 active:scale-[0.98] ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-[#1e3a8a] hover:bg-blue-900'}`}>
                 {isLoading ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                    <Loader2 className="w-5 h-5 animate-spin" />
                     جاري الدخول...
                   </>
                 ) : 'تسجيل الدخول'}
@@ -236,57 +263,46 @@ const ParentLogin = () => {
       {step === 'change_password' && (
         <div className="w-full max-w-md flex flex-col items-center">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4"><Lock className="w-8 h-8 text-green-600" /></div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-1">تغيير كلمة المرور</h1>
-            <p className="text-gray-500 text-sm">أول تسجيل دخول - يجب تغيير كلمة المرور</p>
+            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4"><Lock className="w-8 h-8 text-[#1e3a8a]" /></div>
+            <h1 className="text-2xl font-bold text-gray-800 mb-1">تأمين الحساب</h1>
+            <p className="text-gray-500 text-sm">يرجى تغيير كلمة المرور المؤقتة قبل الدخول</p>
           </div>
-          <div className="bg-white rounded-2xl shadow-lg p-8 w-full">
+          <div className="bg-white rounded-2xl shadow-lg p-8 w-full border border-gray-100">
             {errorMessage && (
-              <div className="bg-red-50 text-red-600 p-3 rounded-xl mb-6 flex items-center gap-2 text-sm border border-red-100">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <span>{errorMessage}</span>
+              <div className="bg-red-50 text-red-600 p-3 rounded-xl mb-6 flex items-start gap-2 text-sm border border-red-100">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{errorMessage}</span>
               </div>
             )}
             <form onSubmit={handleChangePassword} className="space-y-5">
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">كلمة المرور الحالية</label>
                 <div className="relative flex items-center">
-                  <input type={showCurrentPassword ? 'text' : 'password'} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full py-3 bg-gray-100 rounded-full border-none focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] pr-4 pl-12 font-mono text-left direction-ltr" required disabled={isLoading} dir="ltr" />
-                  <button type="button" onClick={() => setShowCurrentPassword(!showCurrentPassword)} className="absolute left-4 text-gray-500 focus:outline-none">{showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button>
+                  <input type={showCurrentPassword ? 'text' : 'password'} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full py-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] pr-4 pl-12 font-mono text-left transition-all" required disabled={isLoading} dir="ltr" />
+                  <button type="button" onClick={() => setShowCurrentPassword(!showCurrentPassword)} className="absolute left-4 text-gray-400 hover:text-[#1e3a8a] focus:outline-none">{showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button>
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">كلمة المرور الجديدة</label>
                 <div className="relative flex items-center">
-                  <input type={showNewPassword ? 'text' : 'password'} placeholder="أدخل كلمة المرور الجديدة" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full py-3 bg-gray-100 rounded-full border-none focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] pr-4 pl-12 font-mono text-left direction-ltr" required disabled={isLoading} dir="ltr" />
-                  <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute left-4 text-gray-500 focus:outline-none">{showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button>
+                  <input type={showNewPassword ? 'text' : 'password'} placeholder="••••••••" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full py-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] pr-4 pl-12 font-mono text-left transition-all" required disabled={isLoading} dir="ltr" />
+                  <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute left-4 text-gray-400 hover:text-[#1e3a8a] focus:outline-none">{showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button>
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">تأكيد كلمة المرور</label>
                 <div className="relative flex items-center">
-                  <input type={showConfirmPassword ? 'text' : 'password'} placeholder="أعد إدخال كلمة المرور الجديدة" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full py-3 bg-gray-100 rounded-full border-none focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] pr-4 pl-12 font-mono text-left direction-ltr" required disabled={isLoading} dir="ltr" />
-                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute left-4 text-gray-500 focus:outline-none">{showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button>
+                  <input type={showConfirmPassword ? 'text' : 'password'} placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full py-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] pr-4 pl-12 font-mono text-left transition-all" required disabled={isLoading} dir="ltr" />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute left-4 text-gray-400 hover:text-[#1e3a8a] focus:outline-none">{showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button>
                 </div>
               </div>
-              <div className="bg-gray-50 rounded-xl p-4 mt-6 border border-gray-100">
-                <p className="text-sm font-medium text-gray-700 mb-3">متطلبات كلمة المرور:</p>
-                <ul className="space-y-2">
-                  <li className="flex items-center text-sm text-gray-600"><CheckCircle2 className="w-4 h-4 text-green-500 ml-2" /> 8 أحرف على الأقل</li>
-                  <li className="flex items-center text-sm text-gray-600"><CheckCircle2 className="w-4 h-4 text-green-500 ml-2" /> أحرف كبيرة وصغيرة</li>
-                  <li className="flex items-center text-sm text-gray-600"><CheckCircle2 className="w-4 h-4 text-green-500 ml-2" /> رقم واحد على الأقل</li>
-                </ul>
-              </div>
-              <button type="submit" disabled={isLoading} className={`w-full text-white font-medium py-3 rounded-full mt-6 shadow-md flex justify-center items-center gap-2 ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-[#1e3a8a] hover:bg-blue-900'}`}>
+              <button type="submit" disabled={isLoading || !newPassword || !confirmPassword} className={`w-full text-white font-bold py-3.5 rounded-xl transition-all mt-8 shadow-lg flex justify-center items-center gap-2 active:scale-[0.98] ${isLoading || !newPassword || !confirmPassword ? 'bg-blue-400 cursor-not-allowed shadow-none' : 'bg-[#1e3a8a] hover:bg-blue-900 shadow-blue-900/20'}`}>
                 {isLoading ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                    <Loader2 className="w-5 h-5 animate-spin" />
                     جاري التحديث...
                   </>
-                ) : 'تأكيد التغيير'}
+                ) : 'تأكيد وحفظ'}
               </button>
             </form>
           </div>

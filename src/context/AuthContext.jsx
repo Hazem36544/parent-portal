@@ -3,46 +3,61 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    
+    // 🚀 التعديل الجوهري 1: قراءة بيانات المستخدم فوراً مع تحميل الصفحة (Synchronous) لمنع اللوب
+    const [user, setUser] = useState(() => {
+        const savedUser = sessionStorage.getItem('wesal_parent_user');
+        return savedUser ? JSON.parse(savedUser) : null;
+    });
+    
+    // 🚀 التعديل الجوهري 2: قراءة التوكن فوراً مع تحميل الصفحة
+    const [isLoggedIn, setIsLoggedIn] = useState(() => {
+        return !!sessionStorage.getItem('wesal_parent_token');
+    });
+    
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // التحقق من وجود بيانات محفوظة عند عمل Refresh للصفحة
-        const token = localStorage.getItem('wesal_parent_token');
-        const savedUser = localStorage.getItem('wesal_parent_user');
-        
-        if (token && savedUser) {
-            setUser(JSON.parse(savedUser));
-            setIsLoggedIn(true);
-        }
+        // مفيش داعي نقرأ الداتا هنا تاني لأننا قرأناها فوق في الـ useState
+        // فقط بنقفل شاشة التحميل ليعمل الـ ProtectedRoute
         setIsLoading(false);
     }, []);
 
     const login = (userData, token) => {
-        // userData المفروض تحتوي على حقل يحدد الهوية مثل: { role: 'father' } أو { role: 'mother' }
-        localStorage.setItem('wesal_parent_token', token);
-        localStorage.setItem('wesal_parent_user', JSON.stringify(userData));
+        // ✅ الحفظ في sessionStorage بدلاً من localStorage
+        sessionStorage.setItem('wesal_parent_token', token);
+        sessionStorage.setItem('wesal_parent_user', JSON.stringify(userData));
+        
         setUser(userData);
         setIsLoggedIn(true);
     };
 
     const logout = () => {
-        // 🚀 التعديل هنا: نكتفي بمسح البيانات فقط من الذاكرة
-        localStorage.removeItem('wesal_parent_token');
-        localStorage.removeItem('wesal_parent_user');
+        // ✅ التنظيف الذكي من sessionStorage للتابة الحالية فقط
+        sessionStorage.removeItem('wesal_parent_token');
+        sessionStorage.removeItem('wesal_parent_user');
+        sessionStorage.removeItem('force_change_password'); // تنظيف إضافي لضمان الأمان
+        
         setUser(null);
         setIsLoggedIn(false);
         
-        // تم حذف سطر window.location.href = '/parent/login'; من هنا
-        // لأن التوجيه الآمن يتم الآن من خلال زر تسجيل الخروج في ملف Sidebar.jsx
+        // التوجيه الآمن يتم الآن من خلال زر تسجيل الخروج في ملف Sidebar.jsx أو ParentLayout
     };
 
     // استخراج الدور لتسهيل استخدامه في الراوتر
     const role = user?.role || null;
 
     return (
-        <AuthContext.Provider value={{ user, role, isLoggedIn, login, logout, isLoading }}>
+        // ✅ تم توفير isAuthenticated لتتوافق مع مكون ProtectedRoute
+        <AuthContext.Provider value={{ 
+            user, 
+            role, 
+            isLoggedIn, 
+            isAuthenticated: isLoggedIn, 
+            login, 
+            logout, 
+            isLoading 
+        }}>
             {children}
         </AuthContext.Provider>
     );

@@ -1,16 +1,10 @@
 import React from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
-import { useAuth } from '../context/AuthContext'; // 🚀 استيراد الـ Hook
 
 export default function ParentLayout() {
-  const { role } = useAuth(); // 🚀 قراءة بيانات المستخدم (أو التوكن)
-  const token = localStorage.getItem('wesal_parent_token'); // أو حسب ما بتخزنه في الـ login
-
-  // 🚀 لو مفيش توكن أو المستخدم مش موجود، اطرده لصفحة الدخول فوراً
-  if (!token) {
-    return <Navigate to="/parent/login" replace />;
-  }
+  // 🚀 تم حذف سطور الحماية والـ Navigate من هنا تماماً!
+  // لأن الـ ProtectedRoute اللي عملناه في App.jsx بيقوم بالواجب وبيفحص الـ sessionStorage بشكل سليم قبل ما يفتح الملف ده أصلاً.
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans text-right relative overflow-x-hidden" dir="rtl">
@@ -21,7 +15,7 @@ export default function ParentLayout() {
       {/* حاوية المحتوى الرئيسية */}
       <div className="mr-32 min-h-screen flex flex-col">
         
-        {/* منطقة عرض الصفحات (Outlet) */}
+        {/* منطقة عرض الصفحات (Outlet) المتغيرة (الداشبورد، الزيارات، النفقة، إلخ) */}
         <main className="flex-1 w-full max-w-7xl mx-auto p-6 md:p-8 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <Outlet />
         </main>

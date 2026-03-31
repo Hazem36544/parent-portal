@@ -16,9 +16,10 @@ import {
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // ✅ سحب دالة logout من الكونتكست اللي بتفضي الـ sessionStorage
   const { logout } = useAuth(); 
   
-  // 🚀 إضافة State للتحكم في حالة خطأ الصورة
   const [logoError, setLogoError] = useState(false);
   
   const menuItems = [
@@ -32,18 +33,13 @@ export default function Sidebar() {
     { id: 'account', label: 'الحساب', icon: User, path: '/parent/account' }
   ];
 
-  // 🚀 التعديل الجذري والآمن لتسجيل الخروج
+  // ✅ التعديل الآمن والناعم لتسجيل الخروج
   const handleLogout = () => {
-    // 1. مسح البيانات من الـ Context
+    // 1. مسح البيانات من الـ sessionStorage للتابة الحالية فقط عبر الكونتكست
     logout(); 
     
-    // 2. توجيه المتصفح إجبارياً للرابط الصحيح لتجنب الشاشة البيضاء تماماً
-    window.location.replace(`${import.meta.env.BASE_URL}#/parent/login`);
-    
-    // 3. إعادة تحميل سريعة للصفحة لضمان مسح أي كاش في الذاكرة (ضمان 100%)
-    setTimeout(() => {
-        window.location.reload();
-    }, 100);
+    // 2. التوجيه السلس لصفحة اللوجين (بدون ريفريش عنيف يكسر تجربة الـ SPA)
+    navigate('/parent/login', { replace: true });
   };
 
   return (
@@ -52,7 +48,7 @@ export default function Sidebar() {
       dir="rtl"
     >
       
-      {/* --- 1. الشعار بطريقة آمنة جداً تمنع الأخطاء --- */}
+      {/* --- 1. الشعار --- */}
       <div className="mb-6 flex-shrink-0 w-full flex justify-center">
         {!logoError ? (
           <img 
