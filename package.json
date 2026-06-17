@@ -13,11 +13,15 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.5.1",
+    "@stripe/react-stripe-js": "^6.3.0",
+    "@stripe/stripe-js": "^9.4.0",
     "axios": "^1.13.5",
     "lucide-react": "^0.575.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hot-toast": "^2.6.0",
+    "react-pdf": "^10.4.1",
     "react-router-dom": "^7.13.0"
   },
   "devDependencies": {

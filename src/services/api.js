@@ -1,5 +1,6 @@
-console.log("Current API URL:", import.meta.env.VITE_API_URL);
+// ✅ تم نقل جملة import لأعلى الملف لتجنب أخطاء Vite
 import axios from 'axios';
+console.log("Current API URL:", import.meta.env.VITE_API_URL);
 
 /**
  * 1. الإعدادات الأساسية
@@ -19,7 +20,6 @@ const api = axios.create({
  */
 api.interceptors.request.use(
     (config) => {
-        // ✅ التعديل الجوهري: استخدام sessionStorage لعزل التابات عن بعضها
         const token = sessionStorage.getItem('wesal_parent_token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`; 
@@ -37,33 +37,33 @@ api.interceptors.response.use(
     (error) => {
         const skipRedirect = error.config?.skipAuthRedirect;
 
-        // ✅ --- التقاط 403 للتوكن المقيد (الباسورد المؤقت) ---
+        // --- التقاط 403 للتوكن المقيد (الباسورد المؤقت) ---
         if (error.response && error.response.status === 403) {
             const serverError = error.response.data;
             const message = serverError?.detail || serverError?.title || "";
             
             if (message.toLowerCase().includes("temporary password")) {
                 console.warn("Temporary password detected - redirecting to change password...");
-                // استخدام sessionStorage للحفاظ على العزل حتى في تغيير الباسورد
                 sessionStorage.setItem('force_change_password', 'true'); 
                 
                 if (!skipRedirect) {
-                    window.location.href = '/'; 
+                    // ✅ التعديل هنا ليتوافق مع جيت هاب والـ HashRouter
+                    window.location.hash = '/parent/login'; 
                 }
                 return Promise.reject(error); 
             }
         }
 
-        // ✅ --- التعامل العادي مع 401 (انتهاء صلاحية التوكن) ---
+        // --- التعامل العادي مع 401 (انتهاء صلاحية التوكن) ---
         if (error.response && error.response.status === 401) {
             console.warn("Unauthorized access - redirecting to login...");
-            // تنظيف التابة الحالية فقط
             sessionStorage.removeItem('wesal_parent_token');
             sessionStorage.removeItem('wesal_parent_user_data');
             sessionStorage.removeItem('wesal_parent_user_role');
             
             if (!skipRedirect) {
-                window.location.href = '/'; 
+                // ✅ التعديل هنا ليتوافق مع جيت هاب والـ HashRouter
+                window.location.hash = '/parent/login'; 
             }
         }
         
@@ -80,11 +80,9 @@ api.interceptors.response.use(
  * --- [ A. خدمات الهوية - Auth ] ---
  */
 export const authAPI = {
-    // ⚠️ انتبه: بوابة الآباء تستخدم nationalId و password
     loginParent: (creds) => api.post('/api/auth/parent/sign-in', creds),
     changePassword: (data) => api.patch('/api/users/change-password', data),
     
-    // ✅ التعديل هنا للقراءة من sessionStorage
     getCurrentUser: () => {
         const savedUser = sessionStorage.getItem('wesal_parent_user_data');
         return Promise.resolve({ data: savedUser ? JSON.parse(savedUser) : {} });
@@ -99,27 +97,29 @@ export const courtAPI = {
     getMyFamilies: () => api.get('/api/families'), 
     updateParent: (id, data) => api.put(`/api/parents/${id}`, data),
     listCourtCasesByFamily: (familyId, params) => api.get(`/api/families/${familyId}/court-cases`, { params }),
-    getAlimonyByCourtCase: (caseId) => api.get(`/api/court-cases/${caseId}/alimony`),
+    getAlimonyByCourtCase: (caseId) => api.get(`/api/court-cases/${caseId}/alimony-schedule`),
     getCustodyByCourtCase: (caseId) => api.get(`/api/court-cases/${caseId}/custodies`),
-    getVisitationScheduleByCourtCase: (caseId) => api.get(`/api/court-cases/${caseId}/visitation-schedules`),
-    listPaymentsDueByAlimony: (alimonyId, params) => api.get(`/api/alimonies/${alimonyId}/payments-due`, { params }),
-    listPaymentsHistory: (paymentDueId, params) => api.get(`/api/payments-due/${paymentDueId}/payments`, { params }),
-    withdrawPayment: (paymentDueId, data) => api.post(`/api/payments-due/${paymentDueId}/withdraw`, data),
-    initiateAlimonyPayment: (paymentDueId, data) => api.post(`/api/payments-due/${paymentDueId}/payments`, data),
+    getVisitationScheduleByCourtCase: (caseId) => api.get(`/api/court-cases/${caseId}/visit-schedules`),
+    listPaymentsDueByAlimony: (alimonyId, params) => api.get(`/api/alimony-schedules/${alimonyId}/alimony-dues`, { params }),
+    listPaymentsHistory: (paymentDueId, params) => api.get(`/api/alimony-dues/${paymentDueId}/payments`, { params }),
+    withdrawPayment: (paymentDueId, data) => api.post(`/api/alimony-dues/${paymentDueId}/withdraw`, data),
+    initiateAlimonyPayment: (paymentDueId, data) => api.post(`/api/alimony-dues/${paymentDueId}/payments`, data),
 };
 
 /**
  * --- [ C. خدمات البيانات المساعدة - Lookups ] ---
  */
 export const lookupAPI = {
-    getVisitationLocations: (params) => api.get('/api/visitation-locations', { params }),
+    getVisitationLocations: (params) => api.get('/api/visit-centers', { params }),
 };
 
 /**
  * --- [ D. خدمات مركز الرؤية - Visitation Execution ] ---
  */
 export const visitationAPI = {
-    list: (params) => api.get('/api/visitations', { params }),
+    list: (params) => api.get('/api/visit-sessions', { params }),
+    // 🚀 التعديل هنا: إضافة دالة تعيين المرافق اللي الأم بتستخدمها
+    setCompanion: (id, data) => api.patch(`/api/visit-sessions/${id}`, data),
 };
 
 /**
@@ -141,15 +141,18 @@ export const complaintsAPI = {
  * --- [ G. التنبيهات والمخالفات - Obligation Alerts ] ---
  */
 export const alertsAPI = {
-    list: (params) => api.get('/api/obligation-alerts', { params }),
+    list: (params) => api.get('/api/violation-alerts', { params }),
 };
 
 /**
  * --- [ H. طلبات التعديل - Custody Requests ] ---
  */
 export const requestsAPI = {
-    list: (params) => api.get('/api/custody-requests', { params }),
-    create: (data) => api.post('/api/custody-requests', data),
+    list: (params) => api.get('/api/hosting-requests', { params }),
+    create: (data) => api.post('/api/hosting-requests', data),
+    // 🚀 التعديل هنا: إضافة دوال معالجة الطلبات (موافقة/رفض)
+    process: (id, data) => api.patch(`/api/hosting-requests/${id}/respond`, data),
+    respondToCustodyRequest: (id, data) => api.patch(`/api/hosting-requests/${id}/respond`, data),
 };
 
 /**
